@@ -1,0 +1,11 @@
+# 复制为 platform.yaml，直接填写各平台密钥；以下示例值必须在部署前替换。
+platforms:
+  - code: registry
+    name: 注册中心
+    description: 消费子平台的入库请求，完成审核并返回结果。
+    secret: "change-this-registry-key"
+
+  - code: platform-a
+    name: 子平台甲
+    description: 提交入库请求，接收并处理审核结果。
+    secret: "change-this-platform-a-key"

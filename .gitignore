@@ -1,3 +1,7 @@
 .env
 platform.yaml
 .DS_Store
+
+# Python 初始化脚本的本机运行缓存。
+__pycache__/
+*.py[cod]

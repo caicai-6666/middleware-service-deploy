@@ -36,6 +36,7 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - backend-files:/workspace/data/ingestion-request/file
+      # 兼容升级前已入流的删除附件，仅用于历史下载与 ack 清理。
       - deletion-files:/workspace/data/deletion-request/file
       - type: bind
         source: ./platform.yaml
@@ -45,23 +46,22 @@ services:
           create_host_path: false
 
   rabbitmq:
-    image: rabbitmq:4.3-management@sha256:8dd6e3570ddaa2ef82a6c3a8950e79c1f73893adfbdddbc374fc1f1ac8a0f5dd
+    build:
+      context: ./rabbitmq
+      dockerfile: Dockerfile
+    image: middleware-rabbitmq:4.3
     hostname: middleware-rabbitmq
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?请配置 .env}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?请配置 .env}
       RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+      RABBITMQ_REQUEST_STREAM: ${RABBITMQ_REQUEST_STREAM:-ingestion-requests}
+      RABBITMQ_RESULT_STREAM: ${RABBITMQ_RESULT_STREAM:-ingestion-results}
+      RABBITMQ_DELETION_REQUEST_STREAM: ${RABBITMQ_DELETION_REQUEST_STREAM:-deletion-requests}
+      RABBITMQ_DELETION_RESULT_STREAM: ${RABBITMQ_DELETION_RESULT_STREAM:-deletion-results}
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
-      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
-      - ./rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
-      interval: 10s
-      timeout: 10s
-      retries: 12
-      start_period: 30s
 
 volumes:
   backend-files:

@@ -16,6 +16,7 @@ STREAM_DEFAULTS = {
     "RABBITMQ_RESULT_STREAM": "ingestion-results",
     "RABBITMQ_DELETION_REQUEST_STREAM": "deletion-requests",
     "RABBITMQ_DELETION_RESULT_STREAM": "deletion-results",
+    "RABBITMQ_FILE_PERMISSION_STREAM": "file-permission-adjustments",
 }
 
 
@@ -25,9 +26,9 @@ def stream_definitions(environment):
         raise ValueError("RABBITMQ_DEFAULT_VHOST 必须为非空字符串")
     names = [environment.get(key, default) for key, default in STREAM_DEFAULTS.items()]
     if any(not isinstance(name, str) or not name.strip() for name in names):
-        raise ValueError("四个业务流名称必须为非空字符串")
+        raise ValueError("五个业务流名称必须为非空字符串")
     if len(set(names)) != len(names):
-        raise ValueError("四个业务流名称不能相同")
+        raise ValueError("五个业务流名称不能相同")
     # 在节点默认账号/vhost 初始化之后导入，只声明队列，不导入或修改用户与权限。
     return {"queues": [
         {"name": name, "vhost": vhost, "durable": True, "auto_delete": False,
@@ -114,7 +115,7 @@ def main(arguments=None):
             if queue.get("type") != "stream" or queue.get("durable") is not True or queue.get("auto_delete") is not False:
                 raise RuntimeError(f"业务流不存在或声明不兼容：{expected['name']}")
         READY.touch()
-        print("四个业务流初始化完成，已有消息和消费进度保留", flush=True)
+        print("五个业务流初始化完成，已有消息和消费进度保留", flush=True)
         return server.wait()
     except ShutdownRequested as error:
         return 128 + error.signum

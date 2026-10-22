@@ -1,7 +1,14 @@
 .env
+.env.*
+!.env.example
 platform.yaml
 .DS_Store
 
 # Python 初始化脚本的本机运行缓存。
 __pycache__/
 *.py[cod]
+
+# 后端是独立仓库，生产部署时嵌套拉取，但不纳入 deploy 提交。
+/middleware-service/
+.idea/
+.vscode/

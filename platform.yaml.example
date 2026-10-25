@@ -1,4 +1,5 @@
 # 复制为 platform.yaml；替换所有示例密钥，不要提交实际配置。
+# 子管理平台必须填写非空 a2aresponsibility，例如“负责解答合同相关问题。”。
 platforms:
   - code: registry
     name: 注册中心
@@ -8,17 +9,25 @@ platforms:
       - 发布平台文件权限调整。
       - 维护用户资料与平台管理员。
     secret: "change-this-registry-key"
-    # false 时不出现在 platform/list 中；不影响登录和业务权限。
-    show_in_list: true
+    supports_a2a: false
+    is_sub_management_platform: false
+    a2aresponsibility: ""
+    is_management_entry: false
 
   - code: knowledge-accumulation
     name: 知识沉淀平台
     description: 同步用户总表、用户成功登录令牌和平台管理员总表。
     secret: "change-this-knowledge-accumulation-key"
-    show_in_list: false
+    supports_a2a: false
+    is_sub_management_platform: false
+    a2aresponsibility: ""
+    is_management_entry: false
 
   - code: platform-a
     name: 子平台甲
     description: 提交入库与删除申请，消费审核结果和文件权限调整。
     secret: "change-this-platform-a-key"
-    show_in_list: true
+    supports_a2a: false
+    is_sub_management_platform: false
+    a2aresponsibility: ""
+    is_management_entry: false

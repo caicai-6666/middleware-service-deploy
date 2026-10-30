@@ -1,13 +1,16 @@
 # 中间件服务部署
 
-本仓库维护 middleware-service 后端、RabbitMQ Streams 和 Redis 的生产部署配置。后端代码独立管理，部署时拉取到本仓库的 `middleware-service/` 子目录；本机开发配置由后端工作区自行维护，不写入生产 Compose。
+本机 IDE 开发使用 [docker-compose.dev.yml](docker-compose.dev.yml)，只启动独立的 RabbitMQ 和 Redis，向宿主机发布回环端口。环境准备、跨项目连接及统一管理命令见[本机开发基础设施](../dev-infra/README.md)。
+
+本仓库维护 middleware-service 后端、RabbitMQ Streams 和 Redis 的生产部署配置。后端代码独立管理，部署时拉取到本仓库的 `middleware-service/` 子目录；本机开发使用本仓库独立的 docker-compose.dev.yml，不向生产 Compose 添加开发端口。
 
 ## 目录与职责
 
 ```text
 middleware-service-deploy/
 ├── README.md
-├── docker-compose.yml
+├── docker-compose.yml            # 生产部署
+├── docker-compose.dev.yml        # IDE 开发，仅运行 RabbitMQ 和 Redis
 ├── .env.example                 # 统一部署参数模板
 ├── platform.yaml.example        # 平台身份与展示信息模板
 ├── rabbitmq/                    # 镜像、五流初始化、插件与广播地址
@@ -31,7 +34,7 @@ cp platform.yaml.example platform.yaml
 
 修改 `.env` 中 RabbitMQ 和 Redis 的密码；不要使用示例值。修改 platform.yaml 中每个平台的 secret，代号与密钥必须唯一。注册中心代码须与 `RABBITMQ_REGISTRY_PLATFORM_CODE` 一致，默认 registry。
 
-platform.yaml 示例包含 registry、knowledge-accumulation 和 platform-a。knowledge-accumulation 用于用户总表、登录成功缓存及管理员总表接口；若使用用户登录功能，必须保留这个固定平台代码并设置独立密钥。registry 与 knowledge-accumulation 均可全量同步用户与管理员，单用户资料更新及管理员单条增删由 registry 操作，用户登录缓存写入仅 knowledge-accumulation 可操作。platform/list 返回全部配置平台及 supports_a2a（是否参与 A2A 协议）、is_sub_management_platform（是否为子管理平台）和 is_management_entry（是否为管理平台入口），三个标记独立、默认 false，按实际情况设置，不改变认证或业务权限。is_sub_management_platform=true 时必须填写非空 a2aresponsibility，说明后续 A2A 协作职责，例如“负责解答合同相关问题。”；其他平台默认空字符串，平台列表同步返回。升级前检查现有子管理平台已填写该字段，否则后端启动校验会失败。原 show_in_list 已移除，旧 platform.yaml 需删除该字段后再更新后端。
+platform.yaml 示例包含 registry、knowledge-accumulation 和 platform-a。knowledge-accumulation 用于用户总表、登录成功缓存及管理员总表接口；若使用用户登录功能，必须保留这个固定平台代码并设置独立密钥。registry 与 knowledge-accumulation 均可全量同步用户与管理员，单用户资料更新及管理员单条增删由 registry 操作，用户登录缓存写入仅 knowledge-accumulation 可操作。platform/list 返回全部配置平台及 supports_a2a（是否参与 A2A 协议）、is_sub_management_platform（是否为子管理平台）和 is_management_entry（是否为管理平台入口），三个标记独立、默认 false，按实际情况设置，不改变平台登录及其他消息流权限。平台 A2A 子平台接口要求 supports_a2a 和 is_sub_management_platform 同时为 true。is_sub_management_platform=true 时必须填写非空 a2aresponsibility，说明后续 A2A 协作职责，例如“负责解答合同相关问题。”；其他平台默认空字符串，平台列表同步返回。升级前检查现有子管理平台已填写该字段，否则后端启动校验会失败。原 show_in_list 已移除，旧 platform.yaml 需删除该字段后再更新后端。
 
 description 支持 Markdown 字符串，可用 YAML 的 `|` 保留换行；后端原样返回，展示由调用端渲染。密钥直接写在 YAML 中，不展开环境变量。
 
@@ -79,6 +82,11 @@ RabbitMQ 与 Redis 只通过 Compose 内部网络供后端访问，分别为 rab
 | `ASSISTANT_TASK_MAX_PER_USER`、`ASSISTANT_TASK_LEASE_SECONDS`、`ASSISTANT_TASK_RECEIPT_TTL_SECONDS` | 每用户 1000 个任务、执行租约 300 秒、确认后幂等记录保留 86400 秒。 |
 | `ASSISTANT_USER_MESSAGE_MERGE_MAX_MESSAGES`、`ASSISTANT_USER_MESSAGE_MERGE_MAX_BYTES`、`ASSISTANT_USER_MESSAGE_MERGE_INTERVAL_SECONDS` | 用户任务最多合并 20 条、65536 原文字节，相邻消息间隔不超过 30 秒。 |
 | `ASSISTANT_TASK_MAX_FILES`、`ASSISTANT_TASK_MAX_FILE_BYTES` | 每条任务最多 10 个附件（合并后也计数），单个附件最多 20971520 字节。 |
+| `PLATFORM_A2A_MAX_INFLIGHT_PER_PLATFORM` | 默认消费窗口 3，范围 1～100；平台 YAML 的 a2a_max_inflight 可覆盖。 |
+| `PLATFORM_A2A_MAX_TASKS_PER_PLATFORM` | 子平台未完成请求和顶层未确认单聊反馈各自最多 1000 条。 |
+| `PLATFORM_A2A_LEASE_SECONDS` | 请求与单聊反馈租约 300 秒，使用对应 pull 显式续租。 |
+| `PLATFORM_A2A_PULL_RECEIPT_TTL_SECONDS` | 领取幂等回执保留 86400 秒，不能短于租约。 |
+| `PLATFORM_A2A_COMPLETION_RECEIPT_TTL_SECONDS` | 子平台完成请求、顶层确认单聊反馈的幂等回执保留 86400 秒。 |
 | `RABBITMQ_USER`、`RABBITMQ_PASSWORD` | RabbitMQ 首次初始化账号与后端连接身份。 |
 | `RABBITMQ_VHOST` | 默认 `/`，同步注入初始化与后端。 |
 | `RABBITMQ_REGISTRY_PLATFORM_CODE` | 默认 registry，决定注册中心业务角色。 |
@@ -86,7 +94,7 @@ RabbitMQ 与 Redis 只通过 Compose 内部网络供后端访问，分别为 rab
 | `REDIS_DB`、`REDIS_KEY_PREFIX`、`REDIS_MAX_CONNECTIONS` | 默认 0、middleware-service、20。 |
 | `INGESTION_CACHE_*`、`REVIEW_CACHE_*`、`DELETION_CACHE_*`、`DELETION_REVIEW_CACHE_*`、`FILE_PERMISSION_CACHE_*` | 五类独立预取缓存，每个平台每流默认 100 条、4194304 字节原始负载。 |
 
-用户资料、登录 token 映射、平台管理员和助理任务存储在 Redis。平台会话、消息预取与发布锁仍在单进程内存中，保持后端单实例。模板不注入尚未接入的 Stream 保留时间或容量预留参数。
+用户资料、登录 token 映射、平台管理员、助理任务和平台 A2A 请求及反馈存储在 Redis。平台会话、消息预取与发布锁仍在单进程内存中，保持后端单实例。模板不注入尚未接入的 Stream 保留时间或容量预留参数。
 
 ---
 
@@ -101,6 +109,20 @@ RabbitMQ 与 Redis 只通过 Compose 内部网络供后端访问，分别为 rab
 - status 返回当前是否有租约有效的任务，以及上次成功 ack 心跳任务的时间；仅发布或领取心跳不会更新时间，也不会自动续期平台或用户登录。心跳由生产端定期发布。
 
 助理任务元数据由 redis-data 持久化，附件由 assistant-files 持久化；确认完成后才删除附件。给用户的结果由执行平台直接发送，给其他助理的消息重新 publish，业务动作完成后再 ack 原任务。
+
+---
+
+## 平台 A2A
+
+平台 A2A 使用现有 Redis，不新增 RabbitMQ 流或附件卷。接口与行为以[平台 A2A API](middleware-service/description/api/platform-a2a.md)和[实现说明](middleware-service/description/capability/application/platform-a2a.md)为准。
+
+只有 knowledge-accumulation 可发布广播、首次单聊和续聊请求并读取反馈。子平台必须同时启用 supports_a2a、is_sub_management_platform，并填写非空 a2aresponsibility，才能接收请求与回复。is_management_entry 不授予顶层权限。
+
+平台 YAML 可设置 a2a_max_inflight，必须为 1～100 的整数；省略或 null 时使用环境默认窗口。子平台窗口用于领取请求，knowledge-accumulation 的窗口用于领取单聊反馈，两种消费方向独立。领取自动补齐剩余窗口，无需传 limit。
+
+子平台提交回复即完成原请求，无需 requests/ack。广播反馈按广播 ID 聚合读取并整轮关闭；单聊反馈由顶层逐条领取、确认。Redis 数据由现有 redis-data 卷持久化，运行可靠性沿用下文的 Redis 持久化边界。
+
+升级时按模板补充所需参数和平台窗口，重建后端镜像并执行 `docker compose up -d --wait backend`。新增参数均有默认值，无需覆盖已有 .env 或 platform.yaml，也无需重建中间件数据卷。
 
 ---
 
@@ -121,6 +143,10 @@ docker compose up -d --wait backend
 RabbitMQ 默认账号与 vhost 仅在空卷首次初始化。已有卷修改 `.env` 不会更改 broker 内的现有账号密码或创建新 vhost，需先完成对应账号与权限维护。Redis 密码由启动时环境配置；轮换时同步重建 Redis 与后端容器。更改流名不会迁移原消息或 offset。
 
 用户登录缓存新契约要求 knowledge-accumulation 通过 PUT /middleware-service/api/user/login-cache 写入 userid 和用户 access_token。其他平台 POST 同一路径时用用户 access_token 查询，平台认证仍由请求头 Bearer token 完成；旧值为 1 的登录记录不会被视为新的有效 token 登录，需在用户成功登录后重新写入。
+
+本次用户资料扩展支持 departments 多部门名称列表。总表省略该字段会按 [] 清空原部门，单用户增量更新省略时保留，[] 清空，显式 null 拒绝；旧 Redis 资料缺字段按 [] 读取，无需迁移。单用户资料响应和登录查询响应新增 departments，严格校验响应字段的调用方需同步 DTO。完整契约见[用户 API](middleware-service/description/api/user.md)。
+
+注册中心现可调用 POST /middleware-service/api/platform/token/verify 只读校验其他平台令牌；已认证平台可调用 POST /middleware-service/api/user/file-permission 按可信 userid 查询本平台文件等级。两者不续期被查询会话或用户登录，具体权限和错误边界见[平台 API](middleware-service/description/api/platform.md)及[用户 API](middleware-service/description/api/user.md)。这些接口复用现有配置，不新增卷或 RabbitMQ 流。
 
 ---
 

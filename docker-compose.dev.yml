@@ -1,0 +1,43 @@
+name: phenosolar-middleware-dev
+
+# 只运行 IDE 开发所需中间件，与生产 Compose 的网络、镜像标签和卷隔离。
+services:
+  rabbitmq:
+    build: ./rabbitmq
+    image: phenosolar-dev-rabbitmq:4.3
+    hostname: phenosolar-middleware-dev-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?请先准备 .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?请先准备 .env}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+      RABBITMQ_REQUEST_STREAM: ${RABBITMQ_REQUEST_STREAM:-ingestion-requests}
+      RABBITMQ_RESULT_STREAM: ${RABBITMQ_RESULT_STREAM:-ingestion-results}
+      RABBITMQ_DELETION_REQUEST_STREAM: ${RABBITMQ_DELETION_REQUEST_STREAM:-deletion-requests}
+      RABBITMQ_DELETION_RESULT_STREAM: ${RABBITMQ_DELETION_RESULT_STREAM:-deletion-results}
+      RABBITMQ_FILE_PERMISSION_STREAM: ${RABBITMQ_FILE_PERMISSION_STREAM:-file-permission-adjustments}
+    ports:
+      - "127.0.0.1:5552:5552"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq.dev.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    mem_limit: 1g
+    stop_grace_period: 45s
+    restart: unless-stopped
+
+  redis:
+    build: ./redis
+    image: phenosolar-dev-redis:7.4.8
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?请先准备 .env}
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    mem_limit: 512m
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+volumes:
+  rabbitmq-data:
+  redis-data:

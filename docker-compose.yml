@@ -58,7 +58,12 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${BACKEND_PORT:-22000}:8000"
+      # 其他 Compose 通过宿主机网关访问，不向局域网地址发布。
+      - "${DOCKER_HOST_GATEWAY:-172.17.0.1}:${BACKEND_PORT:-22000}:8000"
+    # 平台配置保持 0640，补充文件所属组供非 root 应用读取。
+    group_add:
+      - "${PLATFORM_CONFIG_GID:-1000}"
     volumes:
       - backend-files:/workspace/data/ingestion-request/file
       # 兼容升级前已入流的删除附件，仅用于历史下载与 ack 清理。

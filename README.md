@@ -44,10 +44,12 @@ description 支持 Markdown 字符串，可用 YAML 的 `|` 保留换行；后�
 docker compose config --quiet
 docker compose up -d --build --wait
 docker compose ps
-curl http://127.0.0.1:8000/middleware-service/api/health
+curl http://127.0.0.1:22000/middleware-service/api/health
 ```
 
-后端代码在 `/workspace`，使用 Python 3.12，单实例、单 worker，容器内部监听 8000。宿主机默认只绑定 `127.0.0.1:8000`，外部访问可由上层反向代理接入。平台 YAML 只读挂载到 `/data/platform-config/platform.yaml`；源文件缺失会拒绝挂载，不自动创建同名目录。
+后端代码在 `/workspace`，使用 Python 3.12，单实例、单 worker，容器内部监听 8000。宿主机默认绑定 `127.0.0.1:22000` 和 Docker 网关 `172.17.0.1:22000`，不绑定局域网地址。端口与网关通过 `.env` 中的 `BACKEND_PORT`、`DOCKER_HOST_GATEWAY` 配置；部署前执行 `docker network inspect bridge` 核对实际网关地址。其他 Compose 的调用方配置 `extra_hosts: ["host.docker.internal:host-gateway"]`，并使用 `MIDDLEWARE_BASE_URL=http://host.docker.internal:22000`，无需加入公共网络。
+
+平台 YAML 只读挂载到 `/data/platform-config/platform.yaml`；源文件缺失会拒绝挂载，不自动创建同名目录。将文件权限设为 `0640`，并把其所属组的数字 GID 写入 `.env` 的 `PLATFORM_CONFIG_GID`，由主 Compose 的 `group_add` 授予非 root 应用读取权限。端口与权限均在主 `docker-compose.yml` 维护，不需要 `docker-compose.override.yml`；旧部署迁移时应移除覆盖文件，避免自动合并旧配置。
 
 ---
 
@@ -77,6 +79,9 @@ RabbitMQ 与 Redis 只通过 Compose 内部网络供后端访问，分别为 rab
 
 | 参数 | 默认值或用途 |
 | --- | --- |
+| `BACKEND_PORT` | 宿主机 API 端口，默认 22000。 |
+| `DOCKER_HOST_GATEWAY` | 宿主机 Docker 网关绑定地址，默认 172.17.0.1，须与实际配置一致。 |
+| `PLATFORM_CONFIG_GID` | 平台 YAML 所属组的数字 GID，默认 1000；通过附加组供容器读取。 |
 | `PLATFORM_SESSION_TTL_SECONDS` | 平台会话 90 秒。 |
 | `PLATFORM_HEARTBEAT_INTERVAL_SECONDS` | 建议心跳 30 秒，须小于会话有效期。 |
 | `PLATFORM_SESSION_CLEANUP_INTERVAL_SECONDS` | 失活资源清理间隔 10 秒。 |

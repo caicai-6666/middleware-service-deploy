@@ -3,6 +3,8 @@ name: phenosolar-middleware-dev
 # 只运行 IDE 开发所需中间件，与生产 Compose 的网络、镜像标签和卷隔离。
 services:
   rabbitmq:
+    # 回收健康检查等进程遗留的孤儿子进程，避免 PID 持续累积。
+    init: true
     build: ./rabbitmq
     image: phenosolar-dev-rabbitmq:4.3
     hostname: phenosolar-middleware-dev-rabbitmq

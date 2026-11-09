@@ -67,6 +67,8 @@ RabbitMQ 与 Redis 只通过 Compose 内部网络供后端访问，分别为 rab
 
 后端等待 RabbitMQ 与 Redis 健康后启动。运行期间 `/health` 只表示应用存活，不持续探测所有中间件；中间件故障时相关业务接口可能返回 503。
 
+生产和开发 Compose 的 RabbitMQ 服务均设置 `init: true`，由 Docker init 作为 PID 1 回收健康检查和 Erlang CLI 遗留的孤儿子进程。Python 启动器继续负责初始化、停止信号转发和等待 broker。不要只依赖启动器的 `server.wait()` 回收其他后代进程；直接使用 docker run 启动该镜像时也需添加 `--init`。健康检查间隔仍为 10 秒。
+
 ---
 
 ## 环境参数
@@ -142,9 +144,19 @@ docker compose up -d --wait backend
 
 RabbitMQ 默认账号与 vhost 仅在空卷首次初始化。已有卷修改 `.env` 不会更改 broker 内的现有账号密码或创建新 vhost，需先完成对应账号与权限维护。Redis 密码由启动时环境配置；轮换时同步重建 Redis 与后端容器。更改流名不会迁移原消息或 offset。
 
+已有 RabbitMQ 容器启用 init 必须重新创建，单纯 restart 不会增加 init。仅重建 RabbitMQ 服务并复用原项目名、hostname 和 rabbitmq-data 卷，例如生产目录执行：
+
+```bash
+docker compose up -d --no-deps --wait rabbitmq
+```
+
+本机开发使用 `docker compose --env-file .env -f docker-compose.dev.yml up -d --no-deps --wait rabbitmq`。重建会短暂中断连接，调用平台需按既有故障恢复规则重连或重新登录；不要删除卷。出现 PIDs 持续增长、健康检查或 docker exec 报 resource temporarily unavailable 时，应检查孤儿进程回收及 Docker 资源，不能仅通过延长健康检查间隔掩盖累积。
+
 用户登录缓存新契约要求 knowledge-accumulation 通过 PUT /middleware-service/api/user/login-cache 写入 userid 和用户 access_token。其他平台 POST 同一路径时用用户 access_token 查询，平台认证仍由请求头 Bearer token 完成；旧值为 1 的登录记录不会被视为新的有效 token 登录，需在用户成功登录后重新写入。
 
 本次用户资料扩展支持 departments 多部门名称列表。总表省略该字段会按 [] 清空原部门，单用户增量更新省略时保留，[] 清空，显式 null 拒绝；旧 Redis 资料缺字段按 [] 读取，无需迁移。单用户资料响应和登录查询响应新增 departments，严格校验响应字段的调用方需同步 DTO。完整契约见[用户 API](middleware-service/description/api/user.md)。
+
+用户资料同时支持 employment_status（employed 在职、resigned 离职），仅作为资料标识，不改变登录、文件权限或管理员判断。全表注册返回 count 和逐用户状态 users；增量更新与登录查询返回当前任职状态，调用方需同步响应 DTO。全表省略状态会按 employed 覆盖原值，增量省略保留旧值，旧资料缺字段按 employed 读取；无需 Redis 数据迁移或新增环境变量。
 
 注册中心现可调用 POST /middleware-service/api/platform/token/verify 只读校验其他平台令牌；已认证平台可调用 POST /middleware-service/api/user/file-permission 按可信 userid 查询本平台文件等级。两者不续期被查询会话或用户登录，具体权限和错误边界见[平台 API](middleware-service/description/api/platform.md)及[用户 API](middleware-service/description/api/user.md)。这些接口复用现有配置，不新增卷或 RabbitMQ 流。
 
@@ -172,7 +184,6 @@ docker compose exec rabbitmq rabbitmq-diagnostics -q check_running
 
 助理任务 publish 兼容纯文本 JSON 与 multipart 多附件请求，文件显式传递后缀；合并时在各条原始用户消息中保留所属附件。文件由已认证平台通过 GET /middleware-service/api/resource/assistant-tasks/{file_id}?file_extension=pdf 下载，审核附件仍只允许 registry 读取。新增该功能后需重建后端镜像并执行 docker compose up -d --wait backend，使新增 assistant-files 卷及参数注入生效；不需要变更 RabbitMQ 流。已有容器文件系统中若已存有助理文件，应在挂载新卷前迁移，避免新卷遮蔽旧路径。
 
-
 ---
 
 ## 提交前验证记录
@@ -180,3 +191,7 @@ docker compose exec rabbitmq rabbitmq-diagnostics -q check_running
 2026-10-22 从两个仓库当前 Git 提交候选范围导出独立快照，未复制实际 .env、platform.yaml、tests、scripts 或 data 中的本机配置。完成三镜像构建、pip check、独立 Compose 首次启动、三服务健康、五流初始化、平台登录、用户 token 写入及姓名查询、registry 管理员总表同步，以及文件权限调整 publish/pull/ack 验证。
 
 验证使用随机凭据、独立项目名、临时端口和新命名卷。结束后已删除本次测试容器、网络和卷，未修改既有部署或业务数据。后端本机 217 项回归测试通过；测试源码按后端白名单策略不提交。
+
+2026-11-02 修复 RabbitMQ 子进程回收：生产和开发 Compose 启用 init。使用原开发卷重建后，RabbitMQ 恢复 healthy，PIDs 从 52774 降至约 40；五个 Stream 的属性和总计 16 条消息与重建前一致。连续五次执行现有健康检查，未发现僵尸进程，采样 PIDs 为 44（与自动健康检查重叠时短暂为 83），没有逐次累积。
+
+另以同一镜像、独立无网络临时容器构造 25 个孤儿子进程：未启用 init 时残留 25 个僵尸进程，启用后为 0；测试容器均已清理。该对照验证回收机制，不将重建前无法进入容器直接枚举的任务全部认定为已确认的僵尸进程。健康检查频率和业务流配置保持原值，未删除数据卷。

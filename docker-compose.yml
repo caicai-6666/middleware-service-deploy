@@ -72,6 +72,8 @@ services:
           create_host_path: false
 
   rabbitmq:
+    # 回收健康检查等进程遗留的孤儿子进程，避免 PID 持续累积。
+    init: true
     build:
       context: ./rabbitmq
       dockerfile: Dockerfile

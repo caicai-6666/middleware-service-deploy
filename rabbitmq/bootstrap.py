@@ -45,7 +45,7 @@ class ShutdownRequested(Exception):
 def stop_server(server):
     if server.poll() is not None:
         return
-    # Python 是 PID 1，需要转发停止信号并回收 broker；超时才强制终止。
+    # 启动器转发停止信号并等待 broker；Compose 的 init 另行回收孤儿进程，超时才强制终止。
     try:
         os.killpg(server.pid, signal.SIGTERM)
     except ProcessLookupError:
